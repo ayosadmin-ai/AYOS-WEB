@@ -369,28 +369,448 @@
   </div>
 </footer>
 
-<script>
-  // Load Tally's embed script for the AYOS booking form.
-  (function(){
-    var d=document,w="https://tally.so/widgets/embed.js",v=function(){
-      if(typeof Tally!=="undefined"){
-        Tally.loadEmbeds();
-      }else{
-        d.querySelectorAll("iframe[data-tally-src]:not([src])").forEach(function(e){
-          e.src=e.dataset.tallySrc;
-        });
-      }
-    };
-    if(typeof Tally!=="undefined"){
-      v();
-    }else if(d.querySelector('script[src="'+w+'"]')==null){
-      var s=d.createElement("script");
-      s.src=w;
-      s.onload=v;
-      s.onerror=v;
-      d.body.appendChild(s);
+  <script>
+(function () {
+  // ===== CONFIG =====
+  // Your live Apps Script Web App URL.
+  var ENDPOINT = 'https://script.google.com/macros/s/AKfycbw_oT_c5P5oUoLcB3pdsJAV0DeB6V41HRXMMM0PPR9_9Kkk8HFSiFobn4X8CYFwBjhp2w/exec';
+
+  // ===== PRICE LIST (from AYOS_LEAD_TEMPLATE's Price List tab) =====
+  var TIERS = [
+    { key: 'quick_fix', name: 'Quick Fix' },
+    { key: 'standard', name: 'Standard Job' },
+    { key: 'assessment', name: 'Assessment Required' },
+    { key: 'complex', name: 'Complex / Project' }
+  ];
+  var PRICE_LIST = {
+    quick_fix: {
+      'Hanging & Mounting': [['Picture / Mirror Installation',798],['Curtain Rod Installation',798],['Blinds Installation',798],['Wall Shelf Installation',798],['Towel Rack / Accessories',798]],
+      'Light & Electrical': [['Light Bulb Fix/Replacement',798],['Ceiling Light Installation',798],['Pendant / Wall Light',798],['Switch Replacement',798],['Outlet Replacement',798],['Exhaust Fan Replacement',798]],
+      'Plumbing - Basic': [['Faucet Replacement',798],['Shower Head Replacement',798],['Bidet Installation',798],['Toilet Seat Replacement',798],['Sink Drain / Trap Replacement',798],['Angle Valve / Hose Replacement',798]],
+      'Assembly': [['Furniture Assembly',798],['Cabinet Assembly',798],['Shelf / Table Assembly',798],['Bed Frame Assembly',798]],
+      'Minor Repairs & Others': [['Door Knob Replacement',798],['Handle / Hinge',798],['Small Wall Patch / Touch-up',798],['Re-caulking / Sealant',798]]
+    },
+    standard: {
+      'Carpentry': [['Door Adjustment / Repair',1498],['Cabinet Repair / Adjustment',1498],['Cabinet Installation',2498],['Shelf Installation (Multiple)',1498],['Cabinet Modification',1498],['Drawer / Hinge Replacement',1498]],
+      'Painting': [['Paint Touch-up',1498],['Accent Wall',2498],['Room Painting',4500],['Door / Cabinet Repainting',2000]],
+      'Tiling': [['Tile Replacement (Small)',1498],['Re-grouting',1598],['Backsplash Installation',2498],['Bathroom Tile Repair',1498]],
+      'Plumbing - Standard': [['Toilet Replacement',2498],['Sink Installation',2498],['Shower Mixer Replacement',2498],['Waterline / Pipe Extension',2498]],
+      'Electrical - Standard': [['Additional Outlet',1498],['Additional Light Point',1498],['Light / Switch Relocation',1498],['Exhaust Fan Installation',1498]]
+    },
+    assessment: {
+      'Plumbing Problems': ['Leaks (Visible / Hidden)','Clogged Drains','Low Water Pressure','Sewer / Drainage Issues','Water Stains / Ceiling Leaks'],
+      'Electrical Problems': ['Frequent Brownouts / Trips','Outlets Not Working','Burning Smell / Sparking','Partial / Total Power Loss','Old Wiring / Fault Diagnosis'],
+      'Aircon Concerns': ['Aircon Not Cooling','Aircon Water Leaking','Aircon Error / Electrical Issues','Aircon General Troubleshooting'],
+      'Structural / Masonry': ['Wall / Ceiling Cracks','Water Damage','Floor / Concrete Issues','Plaster / Masonry Repairs']
+    },
+    complex: {
+      'Renovation & Remodeling': ['Bathroom Renovation','Kitchen Renovation','Room Renovation','Full Home Renovation'],
+      'Major Carpentry': ['Built-in Cabinets','Kitchen Cabinets','Wardrobes / Closets','Custom Furniture','Wall / Partition Construction'],
+      'Major Electrical': ['House Rewiring','Electrical Panel / Upgrade','Major Circuit Installation','Whole-house Electrical Works'],
+      'Major Plumbing': ['Whole-house Plumbing','Mainline / Sewer Line','Major Pipe Replacement','Bathroom / Kitchen Overhaul'],
+      'Masonry & Structural': ['Roof Repair / Replacement','Wall Demolition / Rebuild','Structural Repairs','Concrete Works','Waterproofing']
     }
-  })();</script>
+  };
+  var TIER_ADDITIONAL_RATE = { quick_fix: 348, standard: 548 };
+  var POWER_TOOLS = ['Cordless Drill','Circular Saw','Angle Grinder','Impact Driver','Jigsaw','Screw Gun'];
+
+  var money = function (n) { return n == null ? '—' : '₱' + Number(n).toLocaleString('en-PH'); };
+
+  // ===== STATE =====
+  var items = [newItem()];
+  var tools = {};
+  var pabiliMode = '';
+  var pabiliCost = '';
+
+  function newItem() { return { id: Math.random().toString(36).slice(2), tier: '', category: '', tasks: [], brief: '', media: [] }; }
+
+  var MAX_PHOTOS_PER_ITEM = 3;
+  var MAX_PHOTO_BYTES = 4 * 1024 * 1024; // 4MB per photo, keeps the JSON payload reasonable
+
+  function readFileAsDataUrl(file) {
+    return new Promise(function (resolve, reject) {
+      var reader = new FileReader();
+      reader.onload = function () { resolve(reader.result); };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function itemPrice(item) {
+    if (!item.tier || !item.category || item.tasks.length === 0) return item.tier === 'assessment' ? 498 : null;
+    if (item.tier === 'assessment') return 498;
+    if (item.tier === 'complex') return null;
+    var rows = PRICE_LIST[item.tier][item.category];
+    var rate = TIER_ADDITIONAL_RATE[item.tier];
+    var total = 0;
+    item.tasks.forEach(function (taskName, idx) {
+      if (idx === 0) {
+        var row = rows.filter(function (r) { return r[0] === taskName; })[0];
+        total += row[1];
+      } else {
+        total += rate;
+      }
+    });
+    return total;
+  }
+
+  // ===== RENDER =====
+  function renderServices() {
+    var wrap = document.getElementById('ab-services');
+    wrap.innerHTML = '';
+    items.forEach(function (item, index) {
+      wrap.appendChild(renderServiceCard(item, index));
+    });
+    renderTotals();
+  }
+
+  function renderServiceCard(item, index) {
+    var card = document.createElement('div');
+    card.className = 'ab-card';
+
+    var head = document.createElement('div');
+    head.className = 'ab-service-head';
+    var label = document.createElement('span');
+    label.className = 'ab-service-label';
+    label.textContent = 'Service ' + (index + 1);
+    head.appendChild(label);
+    if (items.length > 1) {
+      var rm = document.createElement('button');
+      rm.className = 'ab-remove'; rm.type = 'button'; rm.textContent = '✕';
+      rm.onclick = function () { items = items.filter(function (x) { return x.id !== item.id; }); renderServices(); };
+      head.appendChild(rm);
+    }
+    card.appendChild(head);
+
+    var tierLabel = document.createElement('p');
+    tierLabel.style.cssText = 'font-size:13px;font-weight:700;margin:0 0 8px;';
+    tierLabel.textContent = 'What kind of job is this?';
+    card.appendChild(tierLabel);
+
+    var tierGrid = document.createElement('div');
+    tierGrid.className = 'ab-tier-grid';
+    TIERS.forEach(function (t) {
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'ab-tier-btn' + (item.tier === t.key ? ' active' : '');
+      btn.textContent = t.name;
+      btn.onclick = function () { item.tier = t.key; item.category = ''; item.tasks = []; renderServices(); };
+      tierGrid.appendChild(btn);
+    });
+    card.appendChild(tierGrid);
+
+    if (item.tier) {
+      var catLabel = document.createElement('label');
+      catLabel.className = 'ab-field'; catLabel.textContent = 'Category';
+      var catSelect = document.createElement('select');
+      var opt0 = document.createElement('option'); opt0.value = ''; opt0.textContent = 'Select a category';
+      catSelect.appendChild(opt0);
+      Object.keys(PRICE_LIST[item.tier]).forEach(function (c) {
+        var o = document.createElement('option'); o.value = c; o.textContent = c;
+        if (item.category === c) o.selected = true;
+        catSelect.appendChild(o);
+      });
+      catSelect.onchange = function () { item.category = catSelect.value; item.tasks = []; renderServices(); };
+      catLabel.appendChild(catSelect);
+      card.appendChild(catLabel);
+    }
+
+    if (item.category) {
+      var taskLabel = document.createElement('p');
+      taskLabel.style.cssText = 'font-size:13px;font-weight:700;margin:10px 0 8px;';
+      taskLabel.textContent = (item.tier === 'assessment') ? 'What are you noticing?' : (item.tier === 'complex') ? 'What does the project involve?' : 'Pick the task(s) needed';
+      card.appendChild(taskLabel);
+
+      var tasks = (item.tier === 'assessment' || item.tier === 'complex')
+        ? PRICE_LIST[item.tier][item.category]
+        : PRICE_LIST[item.tier][item.category].map(function (r) { return r[0]; });
+
+      tasks.forEach(function (name) {
+        var row = document.createElement('label');
+        row.className = 'ab-task-row' + (item.tasks.indexOf(name) > -1 ? ' checked' : '');
+        var left = document.createElement('span');
+        var cb = document.createElement('input');
+        cb.type = 'checkbox'; cb.checked = item.tasks.indexOf(name) > -1;
+        cb.style.marginRight = '8px';
+        cb.onchange = function () {
+          var i = item.tasks.indexOf(name);
+          if (i > -1) item.tasks.splice(i, 1); else item.tasks.push(name);
+          renderServices();
+        };
+        left.appendChild(cb);
+        left.appendChild(document.createTextNode(name));
+        row.appendChild(left);
+
+        if (item.tier === 'quick_fix' || item.tier === 'standard') {
+          var priceRow = PRICE_LIST[item.tier][item.category].filter(function (r) { return r[0] === name; })[0];
+          var isFirst = item.tasks[0] === name;
+          var checked = item.tasks.indexOf(name) > -1;
+          var preview = (item.tasks.length === 0 || isFirst) ? priceRow[1] : TIER_ADDITIONAL_RATE[item.tier];
+          var priceSpan = document.createElement('span');
+          priceSpan.className = 'ab-task-price';
+          priceSpan.textContent = money(preview) + (checked && !isFirst ? ' (additional)' : '');
+          row.appendChild(priceSpan);
+        }
+        card.appendChild(row);
+      });
+    }
+
+    if (item.category) {
+      var briefLabel = document.createElement('label');
+      briefLabel.className = 'ab-field';
+      briefLabel.textContent = 'Anything else we should know? (optional)';
+      var briefArea = document.createElement('textarea');
+      briefArea.placeholder = 'Short description of the issue…';
+      briefArea.value = item.brief;
+      briefArea.oninput = function () { item.brief = briefArea.value; };
+      briefLabel.appendChild(briefArea);
+      card.appendChild(briefLabel);
+
+      var photoWrap = document.createElement('div');
+      photoWrap.style.marginBottom = '4px';
+      var photoLabelText = document.createElement('p');
+      photoLabelText.style.cssText = 'font-size:13px;font-weight:700;margin:0;';
+      photoLabelText.textContent = 'Photos (optional)';
+      photoWrap.appendChild(photoLabelText);
+
+      if (item.media.length > 0) {
+        var grid = document.createElement('div');
+        grid.className = 'ab-photo-grid';
+        item.media.forEach(function (m, mi) {
+          var thumb = document.createElement('div');
+          thumb.className = 'ab-photo-thumb';
+          var img = document.createElement('img');
+          img.src = m.dataUrl;
+          thumb.appendChild(img);
+          var rm = document.createElement('button');
+          rm.type = 'button'; rm.className = 'ab-photo-remove'; rm.textContent = '✕';
+          rm.onclick = function () { item.media.splice(mi, 1); renderServices(); };
+          thumb.appendChild(rm);
+          grid.appendChild(thumb);
+        });
+        photoWrap.appendChild(grid);
+      }
+
+      if (item.media.length < MAX_PHOTOS_PER_ITEM) {
+        var photoBtn = document.createElement('label');
+        photoBtn.className = 'ab-photo-btn';
+        photoBtn.textContent = '+ Add photo';
+        var fileInput = document.createElement('input');
+        fileInput.type = 'file'; fileInput.accept = 'image/*'; fileInput.multiple = true;
+        fileInput.style.display = 'none';
+        fileInput.onchange = function () {
+          var files = Array.prototype.slice.call(fileInput.files)
+            .filter(function (f) { return f.size <= MAX_PHOTO_BYTES; })
+            .slice(0, MAX_PHOTOS_PER_ITEM - item.media.length);
+          var oversized = fileInput.files.length > files.length;
+          Promise.all(files.map(function (f) {
+            return readFileAsDataUrl(f).then(function (dataUrl) {
+              return { name: f.name, mimeType: f.type, dataUrl: dataUrl };
+            });
+          })).then(function (results) {
+            item.media = item.media.concat(results);
+            renderServices();
+            if (oversized) {
+              var errEl = document.getElementById('ab-error');
+              errEl.textContent = 'One or more photos were skipped — max 4MB each, up to ' + MAX_PHOTOS_PER_ITEM + ' per service.';
+              errEl.classList.remove('ab-hidden');
+            }
+          });
+        };
+        photoBtn.appendChild(fileInput);
+        photoWrap.appendChild(photoBtn);
+        var note = document.createElement('p');
+        note.className = 'ab-photo-note';
+        note.textContent = 'Up to ' + MAX_PHOTOS_PER_ITEM + ' photos, 4MB each';
+        photoWrap.appendChild(note);
+      }
+      card.appendChild(photoWrap);
+    }
+
+    var lineTotal = document.createElement('div');
+    lineTotal.className = 'ab-line-total';
+    var p = itemPrice(item);
+    lineTotal.innerHTML = '<span>Line total</span><span>' + (p == null ? 'Quotation required' : money(p)) + '</span>';
+    card.appendChild(lineTotal);
+
+    return card;
+  }
+
+  function renderTools() {
+    var grid = document.getElementById('ab-tools-grid');
+    grid.innerHTML = '';
+    POWER_TOOLS.forEach(function (t) {
+      var row = document.createElement('label');
+      row.className = 'ab-tool-row';
+      row.innerHTML = '<span>' + t + '</span>';
+      var input = document.createElement('input');
+      input.type = 'number'; input.min = '0'; input.placeholder = '0';
+      input.value = tools[t] || '';
+      input.oninput = function () { tools[t] = input.value; renderTotals(); };
+      row.appendChild(input);
+      grid.appendChild(row);
+    });
+  }
+
+  function renderPabili() {
+    var wrap = document.getElementById('ab-pabili-btns');
+    wrap.innerHTML = '';
+    [['', 'No thanks'], ['small', 'Small (₱300 fee)'], ['multiple', 'Multiple items (10%)']].forEach(function (pair) {
+      var btn = document.createElement('button');
+      btn.type = 'button'; btn.className = 'ab-pabili-btn' + (pabiliMode === pair[0] ? ' active' : '');
+      btn.textContent = pair[1];
+      btn.onclick = function () {
+        pabiliMode = pair[0];
+        document.getElementById('ab-pabili-cost-wrap').classList.toggle('ab-hidden', pabiliMode !== 'multiple');
+        renderPabili(); renderTotals();
+      };
+      wrap.appendChild(btn);
+    });
+  }
+
+  function toolsTotal() {
+    var t = 0;
+    Object.keys(tools).forEach(function (name) {
+      var qty = Number(tools[name]) || 0;
+      t += qty * (name === 'Ladder' ? 300 : 250);
+    });
+    return t;
+  }
+  function materialsTotal() {
+    if (pabiliMode === 'small') return 300;
+    if (pabiliMode === 'multiple') return Math.round((Number(pabiliCost) || 0) * 0.10);
+    return 0;
+  }
+
+  function renderTotals() {
+    var itemTotals = items.map(itemPrice);
+    var hasQuoteRequired = itemTotals.some(function (t) { return t == null; });
+    var itemsSum = itemTotals.reduce(function (s, t) { return s + (t || 0); }, 0);
+    var total = itemsSum + toolsTotal() + materialsTotal();
+    document.getElementById('ab-count-label').textContent = items.length + ' service' + (items.length !== 1 ? 's' : '');
+    document.getElementById('ab-total-label').textContent = hasQuoteRequired ? 'Quotation required' : money(total);
+
+    var validItems = items.every(function (it) { return it.tier && it.category && it.tasks.length > 0; });
+    var name = document.getElementById('ab-name').value;
+    var phone = document.getElementById('ab-phone').value;
+    var area = document.getElementById('ab-area').value;
+    var reason = document.getElementById('ab-reason').value;
+    var areaDetail = document.getElementById('ab-area-detail').value;
+    var canSubmit = validItems && name && phone && area && reason && (area !== 'Outside Parañaque City' || areaDetail);
+    document.getElementById('ab-submit').disabled = !canSubmit;
+  }
+
+  // ===== EVENTS =====
+  document.getElementById('ab-add-service').onclick = function () { items.push(newItem()); renderServices(); };
+  document.getElementById('ab-area').onchange = function () {
+    document.getElementById('ab-area-detail-wrap').classList.toggle('ab-hidden', this.value !== 'Outside Parañaque City');
+    renderTotals();
+  };
+  document.getElementById('ab-pabili-cost').oninput = function () { pabiliCost = this.value; renderTotals(); };
+  ['ab-name','ab-phone','ab-reason','ab-area-detail','ab-property','ab-address','ab-date'].forEach(function (id) {
+    document.getElementById(id).addEventListener('input', renderTotals);
+    document.getElementById(id).addEventListener('change', renderTotals);
+  });
+
+  document.getElementById('ab-submit').onclick = function () {
+    var btn = this;
+    var errEl = document.getElementById('ab-error');
+    errEl.classList.add('ab-hidden');
+
+    var itemTotals = items.map(itemPrice);
+    var hasQuoteRequired = itemTotals.some(function (t) { return t == null; });
+    var total = hasQuoteRequired ? null : itemTotals.reduce(function (s, t) { return s + (t || 0); }, 0) + toolsTotal() + materialsTotal();
+
+    var reference = 'AYOS-' + Math.floor(100 + Math.random() * 900);
+    var booking = {
+      reference: reference,
+      customer_name: document.getElementById('ab-name').value,
+      customer_phone: document.getElementById('ab-phone').value,
+      property_type: document.getElementById('ab-property').value,
+      area: document.getElementById('ab-area').value,
+      address: document.getElementById('ab-address').value,
+      date: document.getElementById('ab-date').value,
+      reason: document.getElementById('ab-reason').value,
+      pabili_service: pabiliMode !== '',
+      pabili_item_cost: pabiliMode === 'multiple' ? Number(pabiliCost) || 0 : null,
+      tools: (function () {
+        var out = {};
+        Object.keys(tools).forEach(function (k) { if (Number(tools[k]) > 0) out[k] = Number(tools[k]); });
+        return out;
+      })(),
+      items: items.map(function (it) {
+        return {
+          tier: it.tier, category: it.category, tasks: it.tasks, brief: it.brief,
+          media: it.media.map(function (m) { return { name: m.name, mimeType: m.mimeType, dataUrl: m.dataUrl }; })
+        };
+      }),
+      total: total
+    };
+
+    btn.disabled = true;
+    btn.textContent = 'Booking…';
+
+    fetch(ENDPOINT, {
+      method: 'POST',
+      body: JSON.stringify(booking)
+    })
+      .then(function (res) { return res.json(); })
+      .then(function (data) {
+        if (!data.ok) throw new Error(data.error || 'Something went wrong');
+        showConfirmation(booking, hasQuoteRequired, total);
+      })
+      .catch(function (err) {
+        errEl.textContent = 'Booking could not be sent: ' + err.message + '. Please try again or message us on Facebook.';
+        errEl.classList.remove('ab-hidden');
+        btn.disabled = false;
+        btn.textContent = 'Book AYOS today';
+      });
+  };
+
+  function showConfirmation(booking, hasQuoteRequired, total) {
+    document.getElementById('ab-form-view').classList.add('ab-hidden');
+    document.getElementById('ab-footer').classList.add('ab-hidden');
+    document.getElementById('ab-confirm-view').classList.remove('ab-hidden');
+    document.getElementById('ab-ref').textContent = 'Reference ' + booking.reference;
+
+    var lines = booking.items.map(function (it, i) {
+      var p = itemPrice(it);
+      var tierName = TIERS.filter(function (t) { return t.key === it.tier; })[0].name;
+      var line = (i + 1) + '. ' + tierName + ' — ' + it.category + ' (' + it.tasks.length + ' task' + (it.tasks.length !== 1 ? 's' : '') + ') — <b>' + (p == null ? 'TBD' : money(p)) + '</b>';
+      var extras = [];
+      if (it.brief) extras.push('"' + it.brief + '"');
+      if (it.media && it.media.length) extras.push(it.media.length + ' photo' + (it.media.length !== 1 ? 's' : '') + ' attached');
+      if (extras.length) line += '<br><span style="color:#94a3b8;font-size:12px;">' + extras.join(' · ') + '</span>';
+      return line;
+    }).join('<br>');
+
+    document.getElementById('ab-summary').innerHTML =
+      '<b>' + booking.customer_name + '</b> · ' + booking.customer_phone + '<br>' +
+      '<span style="color:#64748b;">' + booking.area + (booking.address ? ' — ' + booking.address : '') + '</span>' +
+      '<hr style="border:none;border-top:1px solid #e2e8f0;margin:10px 0;">' +
+      lines +
+      '<hr style="border:none;border-top:1px solid #e2e8f0;margin:10px 0;">' +
+      '<div style="display:flex;justify-content:space-between;font-weight:900;"><span>Total</span><span>' + (hasQuoteRequired ? 'Quotation required' : money(total)) + '</span></div>';
+  }
+
+  document.getElementById('ab-book-another').onclick = function () {
+    items = [newItem()]; tools = {}; pabiliMode = ''; pabiliCost = '';
+    ['ab-name','ab-phone','ab-property','ab-area','ab-address','ab-date','ab-reason','ab-area-detail'].forEach(function (id) {
+      document.getElementById(id).value = '';
+    });
+    document.getElementById('ab-confirm-view').classList.add('ab-hidden');
+    document.getElementById('ab-form-view').classList.remove('ab-hidden');
+    document.getElementById('ab-footer').classList.remove('ab-hidden');
+    document.getElementById('ab-submit').textContent = 'Book AYOS today';
+    renderTools(); renderPabili(); renderServices();
+  };
+
+  // ===== INIT =====
+  renderTools();
+  renderPabili();
+  renderServices();
+})();
+</script>
 
 </body>
 </html>
