@@ -166,32 +166,183 @@
       <p style="color:#B8C2D6;">Fill out the job slip below — we'll confirm your booking over Messenger or SMS.</p>
     </div>
 
-    <div class="tally-wrap">
-      <div class="tally-card">
-        <iframe
-          data-tally-src="https://tally.so/embed/D4GpGZ?alignLeft=1&hideTitle=1&transparentBackground=1&dynamicHeight=1"
-          loading="lazy"
-          width="100%"
-          height="3644"
-          frameborder="0"
-          marginheight="0"
-          marginwidth="0"
-          title="Ipa-AYOS mo na yan!">
-        </iframe>
-      </div>
+   <!-- AYOS BOOKING FORM -->
+<div id="ayos-book">
 
-      <div class="chat-first">
-        <p><strong>Prefer to chat first?</strong> Have a question before booking? Talk to AYOS directly on Messenger.</p>
-        <a
-          href="https://m.me/ayos.care"
-          target="_blank"
-          rel="noopener noreferrer"
-          class="btn btn-ghost">
-          Message AYOS on Facebook →
-        </a>
+  <div class="ab-header">
+    <div class="ab-eyebrow">AYOS HOME CARE SERVICES</div>
+    <div class="ab-title">What can we fix for you?</div>
+    <div class="ab-sub">Add as many services as you need in one booking.</div>
+  </div>
+
+  <div id="ab-form-view" class="ab-body">
+
+    <div id="ab-services"></div>
+
+    <button type="button" class="ab-add-btn" id="ab-add-service">
+      + Add another service
+    </button>
+
+    <div class="ab-card">
+      <h2>Add-ons</h2>
+
+      <label class="ab-field">
+        Tool rental
+        <div class="ab-tools-grid" id="ab-tools-grid"></div>
+      </label>
+
+      <label class="ab-field">
+        Pabili (materials sourcing)
+        <div class="ab-pabili-btns" id="ab-pabili-btns"></div>
+      </label>
+
+      <div id="ab-pabili-cost-wrap" class="ab-hidden">
+        <input
+          type="number"
+          id="ab-pabili-cost"
+          placeholder="Estimated item cost (₱)"
+        >
       </div>
     </div>
+
+    <div class="ab-card">
+      <h2>Your details</h2>
+
+      <div class="ab-grid2">
+
+        <label class="ab-field">
+          Full name
+          <input id="ab-name" type="text">
+        </label>
+
+        <label class="ab-field">
+          Mobile number
+          <input id="ab-phone" type="tel">
+        </label>
+
+      </div>
+
+      <div class="ab-grid2">
+
+        <label class="ab-field">
+          Property type
+
+          <select id="ab-property">
+            <option value="">Select</option>
+            <option>Condo</option>
+            <option>Townhouse</option>
+            <option>Single-Detached House</option>
+            <option>Commercial / Office</option>
+            <option>Other</option>
+          </select>
+        </label>
+
+        <label class="ab-field">
+          Service area
+
+          <select id="ab-area">
+            <option value="">Select area</option>
+            <option>Betterliving</option>
+            <option>BF Homes</option>
+            <option>Nearby Parañaque barangay</option>
+            <option>Outside Parañaque City</option>
+          </select>
+        </label>
+
+      </div>
+
+      <label class="ab-field">
+        Address
+        <input
+          id="ab-address"
+          type="text"
+          placeholder="Unit / Street / Building"
+        >
+      </label>
+
+      <div id="ab-area-detail-wrap" class="ab-hidden">
+        <label class="ab-field">
+          Please specify the area
+          <input id="ab-area-detail" type="text">
+        </label>
+      </div>
+
+      <div class="ab-grid2">
+
+        <label class="ab-field">
+          Preferred date (optional)
+          <input id="ab-date" type="date">
+        </label>
+
+        <label class="ab-field">
+          What made you check today?
+
+          <select id="ab-reason">
+            <option value="">Select one</option>
+            <option>Something broke / stopped working</option>
+            <option>Routine maintenance</option>
+            <option>Moving in / renovation prep</option>
+            <option>Safety concern</option>
+            <option>Other</option>
+          </select>
+        </label>
+
+      </div>
+    </div>
+
+    <div id="ab-error" class="ab-error ab-hidden"></div>
+
   </div>
+
+  <div id="ab-confirm-view" class="ab-confirm ab-hidden">
+
+    <div style="font-size:40px;">✅</div>
+
+    <h2 style="margin:8px 0 0;">
+      Booking received
+    </h2>
+
+    <p id="ab-ref" style="color:#64748b;"></p>
+
+    <div class="ab-confirm-box" id="ab-summary"></div>
+
+    <button
+      type="button"
+      class="ab-add-btn"
+      id="ab-book-another"
+      style="margin-top:20px;">
+      Book another service
+    </button>
+
+  </div>
+
+  <div class="ab-footer" id="ab-footer">
+
+    <div class="ab-footer-inner">
+
+      <div>
+        <div class="ab-total-label" id="ab-count-label">
+          1 service
+        </div>
+
+        <div class="ab-total-amount" id="ab-total-label">
+          Select a service
+        </div>
+      </div>
+
+      <button
+        type="button"
+        class="ab-submit-btn"
+        id="ab-submit"
+        disabled>
+        Book AYOS today
+      </button>
+
+    </div>
+
+  </div>
+
+</div>
 </section>
 
 <footer>
