@@ -58,6 +58,36 @@
   }
   .nav-mobile-hide{display:flex;}
   @media (max-width:720px){ .nav-mobile-hide{display:none;} }
+.mobile-service-tabs{display:none;}
+
+@media (max-width:720px){
+  .mobile-service-tabs{
+    display:flex;
+    position:absolute;
+    left:0;
+    right:0;
+    top:68px;
+    background:var(--navy-deep);
+    padding:8px 16px;
+    gap:8px;
+    z-index:49;
+  }
+
+  .mobile-service-tabs a{
+    flex:1;
+    text-align:center;
+    color:#CFE0D6;
+    font-size:12px;
+    font-weight:800;
+    padding:9px 10px;
+    border-radius:8px;
+  }
+
+  .mobile-service-tabs a.is-active{
+    background:var(--gold);
+    color:var(--navy-deep);
+  }
+}
 
   /* ---------- HERO ---------- */
   .hero{
